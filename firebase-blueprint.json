@@ -1,0 +1,42 @@
+{
+  "entities": {
+    "FamilyState": {
+      "title": "FamilyState",
+      "description": "Entire chore, points, and family data synced across devices",
+      "type": "object",
+      "properties": {
+        "kids": {
+          "type": "array",
+          "description": "List of active kids and spouses with their pins and point balances"
+        },
+        "chores": {
+          "type": "array",
+          "description": "List of chores with assigned kids, frequencies, and status"
+        },
+        "rewards": {
+          "type": "array",
+          "description": "List of purchaseable rewards and point costs"
+        },
+        "pending": {
+          "type": "array",
+          "description": "List of pending chore completions waiting parent approval"
+        },
+        "redemptions": {
+          "type": "array",
+          "description": "List of redeemed reward items and purchase history"
+        },
+        "initialized": {
+          "type": "boolean",
+          "description": "Indicator if the state has been populated"
+        }
+      },
+      "required": ["kids", "chores", "rewards", "pending", "redemptions", "initialized"]
+    }
+  },
+  "firestore": {
+    "/family-data/{documentId}": {
+      "schema": "FamilyState",
+      "description": "Stores the shared family dashboard state for real-time synchronization"
+    }
+  }
+}

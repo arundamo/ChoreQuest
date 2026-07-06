@@ -1,0 +1,6 @@
+{
+  "name": "ChoreQuest",
+  "description": "A fun, kid-friendly chore chart and reward tracker application with separate parent and child dashboards, and AI-enabled chore and reward suggestions.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
