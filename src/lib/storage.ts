@@ -1,4 +1,4 @@
-import { Kid, Chore, Reward, PendingChore, Redemption } from "../types";
+import { Kid, Chore, Reward, PendingChore, Redemption, TvSession } from "../types";
 
 const KEYS = {
   KIDS: "chorequest_kids",
@@ -6,7 +6,8 @@ const KEYS = {
   REWARDS: "chorequest_rewards",
   PENDING: "chorequest_pending",
   REDEMPTIONS: "chorequest_redemptions",
-  PARENT_PIN: "chorequest_parent_pin"
+  PARENT_PIN: "chorequest_parent_pin",
+  TV_SESSIONS: "chorequest_tv_sessions"
 };
 
 // Seed Helper Data
@@ -102,6 +103,9 @@ export const savePending = (data: PendingChore[]) => saveData(KEYS.PENDING, data
 
 export const loadRedemptions = (): Redemption[] => loadData(KEYS.REDEMPTIONS, DEFAULT_REDEMPTIONS);
 export const saveRedemptions = (data: Redemption[]) => saveData(KEYS.REDEMPTIONS, data);
+
+export const loadTvSessions = (): TvSession[] => loadData(KEYS.TV_SESSIONS, []);
+export const saveTvSessions = (data: TvSession[]) => saveData(KEYS.TV_SESSIONS, data);
 
 export const loadParentPin = (): string => {
   try {

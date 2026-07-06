@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Kid, Chore, Reward, PendingChore, Redemption } from "./types";
+import { Kid, Chore, Reward, PendingChore, Redemption, TvSession } from "./types";
 import { 
   loadKids, saveKids, 
   loadChores, saveChores, 
   loadRewards, saveRewards, 
   loadPending, savePending, 
   loadRedemptions, saveRedemptions,
-  loadParentPin, saveParentPin
+  loadParentPin, saveParentPin,
+  loadTvSessions, saveTvSessions
 } from "./lib/storage";
 import LoginScreen from "./components/LoginScreen";
 import ParentDashboard from "./components/ParentDashboard";
@@ -63,6 +64,26 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
   throw new Error(JSON.stringify(errInfo));
 }
 
+function sanitizeForFirestore(obj: any): any {
+  if (obj === null || obj === undefined) return null;
+  if (Array.isArray(obj)) {
+    return obj.map(item => sanitizeForFirestore(item));
+  }
+  if (typeof obj === "object") {
+    const sanitized: any = {};
+    for (const key in obj) {
+      if (Object.prototype.hasOwnProperty.call(obj, key)) {
+        const val = obj[key];
+        if (val !== undefined) {
+          sanitized[key] = sanitizeForFirestore(val);
+        }
+      }
+    }
+    return sanitized;
+  }
+  return obj;
+}
+
 export default function App() {
   // Application Roles State
   const [currentUser, setCurrentUser] = useState<{ role: "parent" | "kid"; data?: Kid } | null>(null);
@@ -74,6 +95,7 @@ export default function App() {
   const [pending, setPending] = useState<PendingChore[]>([]);
   const [redemptions, setRedemptions] = useState<Redemption[]>([]);
   const [parentPin, setParentPin] = useState<string>("0000");
+  const [tvSessions, setTvSessions] = useState<TvSession[]>([]);
 
   const lastServerStateRef = useRef<string>("");
 
@@ -92,7 +114,8 @@ export default function App() {
             rewards: data.rewards || [],
             pending: data.pending || [],
             redemptions: data.redemptions || [],
-            parentPin: data.parentPin || "0000"
+            parentPin: data.parentPin || "0000",
+            tvSessions: data.tvSessions || []
           };
           const serverStateStr = JSON.stringify(serverStateObj);
 
@@ -103,6 +126,7 @@ export default function App() {
             setPending(serverStateObj.pending);
             setRedemptions(serverStateObj.redemptions);
             setParentPin(serverStateObj.parentPin);
+            setTvSessions(serverStateObj.tvSessions);
 
             saveKids(serverStateObj.kids);
             saveChores(serverStateObj.chores);
@@ -110,6 +134,7 @@ export default function App() {
             savePending(serverStateObj.pending);
             saveRedemptions(serverStateObj.redemptions);
             saveParentPin(serverStateObj.parentPin);
+            saveTvSessions(serverStateObj.tvSessions);
 
             lastServerStateRef.current = serverStateStr;
           }
@@ -121,6 +146,7 @@ export default function App() {
           const localPending = loadPending();
           const localRedemptions = loadRedemptions();
           const localParentPin = loadParentPin();
+          const localTvSessions = loadTvSessions();
 
           setKids(localKids);
           setChores(localChores);
@@ -128,6 +154,7 @@ export default function App() {
           setPending(localPending);
           setRedemptions(localRedemptions);
           setParentPin(localParentPin);
+          setTvSessions(localTvSessions);
 
           const localStateObj = {
             kids: localKids,
@@ -136,6 +163,7 @@ export default function App() {
             pending: localPending,
             redemptions: localRedemptions,
             parentPin: localParentPin,
+            tvSessions: localTvSessions,
             initialized: true
           };
           lastServerStateRef.current = JSON.stringify({
@@ -144,10 +172,11 @@ export default function App() {
             rewards: localRewards,
             pending: localPending,
             redemptions: localRedemptions,
-            parentPin: localParentPin
+            parentPin: localParentPin,
+            tvSessions: localTvSessions
           });
 
-          setDoc(docRef, localStateObj).catch(err => {
+          setDoc(docRef, sanitizeForFirestore(localStateObj)).catch(err => {
             handleFirestoreError(err, OperationType.WRITE, docPath);
           });
         }
@@ -173,11 +202,11 @@ export default function App() {
 
   // 2. Automatically save state back to Firestore when changed by user interaction
   useEffect(() => {
-    if (kids.length === 0 && chores.length === 0 && rewards.length === 0 && pending.length === 0 && redemptions.length === 0) {
+    if (kids.length === 0 && chores.length === 0 && rewards.length === 0 && pending.length === 0 && redemptions.length === 0 && tvSessions.length === 0) {
       return;
     }
 
-    const currentState = { kids, chores, rewards, pending, redemptions, parentPin };
+    const currentState = { kids, chores, rewards, pending, redemptions, parentPin, tvSessions };
     const currentStateStr = JSON.stringify(currentState);
 
     if (currentStateStr !== lastServerStateRef.current) {
@@ -185,12 +214,12 @@ export default function App() {
 
       const docPath = "family-data/chorequest";
       const docRef = doc(db, "family-data", "chorequest");
-      setDoc(docRef, { ...currentState, initialized: true })
+      setDoc(docRef, sanitizeForFirestore({ ...currentState, initialized: true }))
         .catch(err => {
           handleFirestoreError(err, OperationType.WRITE, docPath);
         });
     }
-  }, [kids, chores, rewards, pending, redemptions, parentPin]);
+  }, [kids, chores, rewards, pending, redemptions, parentPin, tvSessions]);
 
   // Update central kid data accessor when logging in
   const updateActiveKidSessionData = (updatedKids: Kid[]) => {
@@ -203,21 +232,22 @@ export default function App() {
   };
 
   // 1. ADD, UPDATE & DELETE KIDS
-  const handleAddKid = (name: string, pin: string, role: "kid" | "spouse" = "kid") => {
+  const handleAddKid = (name: string, pin: string, role: "kid" | "spouse" = "kid", screenTimeLimitMinutes?: number) => {
     const newKid: Kid = {
       id: `kid-${Date.now()}`,
       name,
       pin,
       points: 0,
       totalEarned: 0,
-      role
+      role,
+      screenTimeLimitMinutes: role === "spouse" ? undefined : (screenTimeLimitMinutes ?? 60)
     };
     const updated = [...kids, newKid];
     setKids(updated);
     saveKids(updated);
   };
 
-  const handleUpdateKid = (id: string, name: string, pin: string, points: number, role: "kid" | "spouse" = "kid") => {
+  const handleUpdateKid = (id: string, name: string, pin: string, points: number, role: "kid" | "spouse" = "kid", screenTimeLimitMinutes?: number) => {
     const updated = kids.map(k => {
       if (k.id === id) {
         return {
@@ -226,7 +256,8 @@ export default function App() {
           pin,
           points,
           totalEarned: Math.max(k.totalEarned, points),
-          role
+          role,
+          screenTimeLimitMinutes: role === "spouse" ? undefined : (screenTimeLimitMinutes ?? k.screenTimeLimitMinutes ?? 60)
         };
       }
       return k;
@@ -460,6 +491,70 @@ export default function App() {
     updateActiveKidSessionData(updatedKids);
   };
 
+  const calculatePenaltyForDate = (kidId: string, date: string, sessions: TvSession[]): number => {
+    const targetKid = kids.find(k => k.id === kidId);
+    const limitMinutes = targetKid?.screenTimeLimitMinutes ?? 60;
+    const kidSessions = sessions.filter(s => s.kidId === kidId && s.date === date);
+    const totalMinutes = kidSessions.reduce((sum, s) => sum + s.durationMinutes, 0);
+    if (totalMinutes <= limitMinutes) {
+      return 0;
+    }
+    const excessMinutes = totalMinutes - limitMinutes;
+    return Math.floor(excessMinutes / 30) * 5;
+  };
+
+  const handleAddTvSession = (session: Omit<TvSession, "id" | "createdAt">) => {
+    const { kidId, date } = session;
+    const penaltyBefore = calculatePenaltyForDate(kidId, date, tvSessions);
+
+    const newSession: TvSession = {
+      ...session,
+      id: "tv-" + Date.now() + "-" + Math.random().toString(36).substr(2, 4),
+      createdAt: new Date().toISOString()
+    };
+    const updated = [newSession, ...tvSessions];
+    const penaltyAfter = calculatePenaltyForDate(kidId, date, updated);
+    const penaltyDiff = penaltyAfter - penaltyBefore;
+
+    const updatedKids = kids.map(k => {
+      if (k.id === kidId) {
+        return { ...k, points: Math.max(0, k.points - penaltyDiff) };
+      }
+      return k;
+    });
+
+    setKids(updatedKids);
+    saveKids(updatedKids);
+    setTvSessions(updated);
+    saveTvSessions(updated);
+    updateActiveKidSessionData(updatedKids);
+  };
+
+  const handleDeleteTvSession = (id: string) => {
+    const sessionToDelete = tvSessions.find(s => s.id === id);
+    if (!sessionToDelete) return;
+
+    const { kidId, date } = sessionToDelete;
+    const penaltyBefore = calculatePenaltyForDate(kidId, date, tvSessions);
+
+    const updated = tvSessions.filter(s => s.id !== id);
+    const penaltyAfter = calculatePenaltyForDate(kidId, date, updated);
+    const penaltyDiff = penaltyAfter - penaltyBefore;
+
+    const updatedKids = kids.map(k => {
+      if (k.id === kidId) {
+        return { ...k, points: Math.max(0, k.points - penaltyDiff) };
+      }
+      return k;
+    });
+
+    setKids(updatedKids);
+    saveKids(updatedKids);
+    setTvSessions(updated);
+    saveTvSessions(updated);
+    updateActiveKidSessionData(updatedKids);
+  };
+
   const handleLogout = () => {
     setCurrentUser(null);
   };
@@ -500,6 +595,7 @@ export default function App() {
               pending={pending}
               redemptions={redemptions}
               parentPin={parentPin}
+              tvSessions={tvSessions}
               onUpdateParentPin={(newPin) => {
                 setParentPin(newPin);
                 saveParentPin(newPin);
@@ -516,6 +612,8 @@ export default function App() {
               onRejectChore={handleRejectChore}
               onApproveRedemption={handleApproveRedemption}
               onRejectRedemption={handleRejectRedemption}
+              onAddTvSession={handleAddTvSession}
+              onDeleteTvSession={handleDeleteTvSession}
               onLogout={handleLogout}
             />
           </motion.div>
@@ -532,6 +630,7 @@ export default function App() {
               rewards={rewards}
               pending={pending}
               redemptions={redemptions}
+              tvSessions={tvSessions}
               onCompleteChore={handleCompleteChore}
               onRedeemReward={handleRedeemReward}
               onLogout={handleLogout}

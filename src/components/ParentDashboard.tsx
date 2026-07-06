@@ -1,9 +1,9 @@
 import React, { useState } from "react";
-import { Kid, Chore, Reward, PendingChore, Redemption, AISuggestedChore, AISuggestedReward } from "../types";
+import { Kid, Chore, Reward, PendingChore, Redemption, AISuggestedChore, AISuggestedReward, TvSession } from "../types";
 import { motion, AnimatePresence } from "motion/react";
 import { 
   Sparkles, Plus, Trash2, Edit2, Check, X, ShieldAlert, 
-  Users, Award, ClipboardList, CheckSquare, History, UserPlus, LogOut, Loader2
+  Users, Award, ClipboardList, CheckSquare, History, UserPlus, LogOut, Loader2, Tv
 } from "lucide-react";
 
 export const CHORE_PRESETS: Record<string, { name: string; points: number; frequency: 'daily' | 'weekly' | 'one-time' }> = {
@@ -30,23 +30,26 @@ interface ParentDashboardProps {
   pending: PendingChore[];
   redemptions: Redemption[];
   parentPin: string;
+  tvSessions?: TvSession[];
   onUpdateParentPin: (newPin: string) => void;
   onAddChore: (chore: Omit<Chore, "id" | "createdAt" | "isActive">) => void;
   onUpdateChore: (id: string, updated: Partial<Chore>) => void;
   onDeleteChore: (id: string) => void;
   onAddReward: (reward: Omit<Reward, "id" | "createdAt">) => void;
   onDeleteReward: (id: string) => void;
-  onAddKid: (name: string, pin: string, role?: 'kid' | 'spouse') => void;
-  onUpdateKid: (id: string, name: string, pin: string, points: number, role?: 'kid' | 'spouse') => void;
+  onAddKid: (name: string, pin: string, role?: 'kid' | 'spouse', screenTimeLimitMinutes?: number) => void;
+  onUpdateKid: (id: string, name: string, pin: string, points: number, role?: 'kid' | 'spouse', screenTimeLimitMinutes?: number) => void;
   onDeleteKid: (id: string) => void;
   onApproveChore: (pendingId: string) => void;
   onRejectChore: (pendingId: string) => void;
   onApproveRedemption: (redemptionId: string) => void;
   onRejectRedemption: (redemptionId: string) => void;
+  onAddTvSession: (session: Omit<TvSession, "id" | "createdAt">) => void;
+  onDeleteTvSession: (id: string) => void;
   onLogout: () => void;
 }
 
-type TabType = "chores" | "rewards" | "approvals" | "kids";
+type TabType = "chores" | "rewards" | "approvals" | "kids" | "tv";
 
 export default function ParentDashboard({
   kids,
@@ -55,6 +58,7 @@ export default function ParentDashboard({
   pending,
   redemptions,
   parentPin,
+  tvSessions = [],
   onUpdateParentPin,
   onAddChore,
   onUpdateChore,
@@ -68,6 +72,8 @@ export default function ParentDashboard({
   onRejectChore,
   onApproveRedemption,
   onRejectRedemption,
+  onAddTvSession,
+  onDeleteTvSession,
   onLogout
 }: ParentDashboardProps) {
   const [activeTab, setActiveTab] = useState<TabType>("chores");
@@ -76,7 +82,16 @@ export default function ParentDashboard({
   const [choreForm, setChoreForm] = useState({ name: "", points: 30, assignedTo: "", frequency: "daily" as any });
   const [createPresetKey, setCreatePresetKey] = useState<string>("custom");
   const [rewardForm, setRewardForm] = useState({ name: "", pointsCost: 50, quantity: -1 });
-  const [kidForm, setKidForm] = useState({ name: "", pin: "", role: "kid" as "kid" | "spouse" });
+  const [kidForm, setKidForm] = useState({ name: "", pin: "", role: "kid" as "kid" | "spouse", screenTimeLimitMinutes: 60 });
+
+  const [tvForm, setTvForm] = useState({
+    kidId: "",
+    durationMinutes: 30,
+    notes: "",
+    date: new Date().toISOString().split("T")[0]
+  });
+  const [tvError, setTvError] = useState("");
+  const [tvSuccess, setTvSuccess] = useState("");
 
   // Parent Passcode Edit State
   const [newParentPin, setNewParentPin] = useState("");
@@ -95,7 +110,7 @@ export default function ParentDashboard({
 
   // Kid Edit States
   const [editingKidId, setEditingKidId] = useState<string | null>(null);
-  const [editKidForm, setEditKidForm] = useState({ name: "", pin: "", points: 0, role: "kid" as "kid" | "spouse" });
+  const [editKidForm, setEditKidForm] = useState({ name: "", pin: "", points: 0, role: "kid" as "kid" | "spouse", screenTimeLimitMinutes: 60 });
   const [editKidError, setEditKidError] = useState("");
   const [kidIdToDelete, setKidIdToDelete] = useState<string | null>(null);
   const [choreIdToDelete, setChoreIdToDelete] = useState<string | null>(null);
@@ -119,16 +134,51 @@ export default function ParentDashboard({
   const kidsCount = kids.filter(k => !k.role || k.role === "kid").length;
   const spousesCount = kids.filter(k => k.role === "spouse").length;
 
+  const todayStr = new Date().toISOString().split("T")[0];
+  const todayTvMinutes = tvSessions
+    .filter(s => s.date === todayStr)
+    .reduce((sum, s) => sum + s.durationMinutes, 0);
+
+  const handleLogTvSession = (e: React.FormEvent) => {
+    e.preventDefault();
+    setTvError("");
+    setTvSuccess("");
+    const { kidId, durationMinutes, notes, date } = tvForm;
+
+    if (!kidId) return setTvError("Please select a child!");
+    if (durationMinutes <= 0) return setTvError("Duration must be more than 0 minutes!");
+    if (!date) return setTvError("Please select a valid date!");
+
+    const kid = kids.find(k => k.id === kidId);
+    if (!kid) return setTvError("Selected child not found!");
+
+    onAddTvSession({
+      kidId,
+      kidName: kid.name,
+      durationMinutes,
+      notes: notes.trim() || undefined,
+      date
+    });
+
+    setTvForm(prev => ({
+      ...prev,
+      durationMinutes: 30,
+      notes: ""
+    }));
+    setTvSuccess(`Successfully logged ${durationMinutes} minutes for ${kid.name}!`);
+    setTimeout(() => setTvSuccess(""), 4000);
+  };
+
   const handleCreateKid = (e: React.FormEvent) => {
     e.preventDefault();
     setKidError("");
-    const { name, pin, role } = kidForm;
+    const { name, pin, role, screenTimeLimitMinutes } = kidForm;
     
     if (!name.trim()) return setKidError("Name can't be empty!");
     if (!/^\d{4}$/.test(pin)) return setKidError("PIN must be exactly 4 numbers (e.g. 1234)!");
 
-    onAddKid(name.trim(), pin, role);
-    setKidForm({ name: "", pin: "", role: "kid" });
+    onAddKid(name.trim(), pin, role, role === "spouse" ? undefined : screenTimeLimitMinutes);
+    setKidForm({ name: "", pin: "", role: "kid", screenTimeLimitMinutes: 60 });
   };
 
   const handleCreatePresetChange = (key: string) => {
@@ -272,7 +322,7 @@ export default function ParentDashboard({
       </div>
 
       {/* Summary Cards Row */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
         <button
           onClick={() => setActiveTab("chores")}
           className="bg-amber-50 border-3 border-amber-100 hover:border-amber-300 rounded-2xl p-4 flex items-center gap-3 cursor-pointer transition-all duration-200 hover:scale-[1.02] active:scale-98 text-left w-full block focus:outline-hidden focus:ring-2 focus:ring-amber-400"
@@ -333,6 +383,21 @@ export default function ParentDashboard({
             </div>
           </div>
         </button>
+
+        <button
+          onClick={() => setActiveTab("tv")}
+          className="bg-rose-50 border-3 border-rose-100 hover:border-rose-300 rounded-2xl p-4 flex items-center gap-3 cursor-pointer transition-all duration-200 hover:scale-[1.02] active:scale-98 text-left w-full block focus:outline-hidden focus:ring-2 focus:ring-rose-400"
+        >
+          <div className="p-3 bg-rose-500 text-white rounded-xl">
+            <Tv size={22} />
+          </div>
+          <div>
+            <div className="text-slate-500 text-xs uppercase tracking-wider font-bold">TV Time Today</div>
+            <div className="text-2xl font-mono font-bold text-slate-800">
+              {todayTvMinutes} <span className="text-xs text-slate-400 uppercase font-sans font-bold">mins</span>
+            </div>
+          </div>
+        </button>
       </div>
 
       {/* Interactive Tabs Menu */}
@@ -360,6 +425,12 @@ export default function ParentDashboard({
           className={`pb-3 border-b-3 px-2 ${activeTab === "kids" ? "border-indigo-600 text-indigo-800 text-base" : "border-transparent text-slate-400 hover:text-slate-600"} transition flex items-center gap-1.5 cursor-pointer`}
         >
           👨‍👩‍👧‍👦 Family Profiles
+        </button>
+        <button
+          onClick={() => setActiveTab("tv")}
+          className={`pb-3 border-b-3 px-2 ${activeTab === "tv" ? "border-indigo-600 text-indigo-800 text-base" : "border-transparent text-slate-400 hover:text-slate-600"} transition flex items-center gap-1.5 cursor-pointer`}
+        >
+          📺 TV Screen Time
         </button>
       </div>
 
@@ -1030,6 +1101,21 @@ export default function ParentDashboard({
                     />
                   </div>
 
+                  {kidForm.role !== "spouse" && (
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Daily TV/Screen Limit (Minutes)</label>
+                      <input
+                        type="number"
+                        min={10}
+                        max={480}
+                        placeholder="e.g. 60"
+                        value={kidForm.screenTimeLimitMinutes}
+                        onChange={(e) => setKidForm(prev => ({ ...prev, screenTimeLimitMinutes: Math.max(1, parseInt(e.target.value) || 0) }))}
+                        className="w-full px-4 py-2.5 border-2 border-slate-200 focus:border-indigo-400 rounded-xl outline-hidden text-slate-700 font-sans font-bold"
+                      />
+                    </div>
+                  )}
+
                   {kidError && <p className="text-rose-500 text-xs font-bold bg-rose-50 p-2 rounded-lg border border-rose-100">{kidError}</p>}
 
                   <button
@@ -1159,6 +1245,20 @@ export default function ParentDashboard({
                           </div>
                         </div>
 
+                        {editKidForm.role !== "spouse" && (
+                          <div>
+                            <label className="block text-3xs font-bold text-indigo-700 uppercase tracking-wider mb-0.5">Daily TV/Screen Limit (Minutes)</label>
+                            <input
+                              type="number"
+                              min={10}
+                              max={480}
+                              value={editKidForm.screenTimeLimitMinutes || 60}
+                              onChange={(e) => setEditKidForm(prev => ({ ...prev, screenTimeLimitMinutes: Math.max(1, parseInt(e.target.value) || 0) }))}
+                              className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-sm text-center font-mono font-bold text-slate-700"
+                            />
+                          </div>
+                        )}
+
                         {editKidError && <p className="text-rose-500 text-2xs font-bold bg-rose-50 p-1.5 rounded border border-rose-100 leading-tight">{editKidError}</p>}
 
                         <div className="flex items-center justify-between pt-2 border-t gap-2">
@@ -1213,12 +1313,12 @@ export default function ParentDashboard({
                             <button
                               type="button"
                               onClick={() => {
-                                const { name, pin, points, role } = editKidForm;
+                                const { name, pin, points, role, screenTimeLimitMinutes } = editKidForm;
                                 if (!name.trim()) return setEditKidError("Name cannot be empty!");
                                 if (!/^\d{4}$/.test(pin)) return setEditKidError("PIN must be 4 numbers!");
                                 if (points < 0) return setEditKidError("Points cannot be negative!");
                                 
-                                onUpdateKid(k.id, name.trim(), pin, points, role);
+                                onUpdateKid(k.id, name.trim(), pin, points, role, role === "spouse" ? undefined : screenTimeLimitMinutes);
                                 setEditingKidId(null);
                                 setEditKidError("");
                               }}
@@ -1267,7 +1367,7 @@ export default function ParentDashboard({
                         <button
                           onClick={() => {
                             setEditingKidId(k.id);
-                            setEditKidForm({ name: k.name, pin: k.pin, points: k.points, role: k.role || "kid" });
+                            setEditKidForm({ name: k.name, pin: k.pin, points: k.points, role: k.role || "kid", screenTimeLimitMinutes: k.screenTimeLimitMinutes || 60 });
                             setEditKidError("");
                           }}
                           className="text-xs font-sans font-bold text-slate-500 hover:text-indigo-600 transition flex items-center gap-1 cursor-pointer bg-slate-50 hover:bg-indigo-50 px-2.5 py-1 rounded-lg border border-slate-150"
@@ -1349,6 +1449,252 @@ export default function ParentDashboard({
                 })()}
               </AnimatePresence>
 
+            </div>
+          </div>
+        )}
+
+        {/* TAB 5: TV TIME LOGS */}
+        {activeTab === "tv" && (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Form Column */}
+            <div className="bg-white p-6 rounded-3xl border-4 border-slate-100 shadow-xs h-fit text-left">
+              <h3 className="font-display font-bold text-xl text-slate-800 mb-2 flex items-center gap-2">
+                📺 Log TV & Screen Interval
+              </h3>
+              <p className="text-xs text-slate-500 mb-4 font-sans font-medium">
+                Record a specific watch interval for your child. It will automatically consolidate into their daily total.
+              </p>
+              
+              <form onSubmit={handleLogTvSession} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Select Child</label>
+                  <select
+                    value={tvForm.kidId}
+                    onChange={(e) => setTvForm(prev => ({ ...prev, kidId: e.target.value }))}
+                    className="w-full px-4 py-2.5 border-2 border-slate-200 focus:border-indigo-400 rounded-xl outline-hidden text-slate-700 font-sans bg-white cursor-pointer"
+                  >
+                    <option value="">-- Choose family member --</option>
+                    {kids.map(k => (
+                      <option key={k.id} value={k.id}>{k.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Date</label>
+                  <input
+                    type="date"
+                    value={tvForm.date}
+                    onChange={(e) => setTvForm(prev => ({ ...prev, date: e.target.value }))}
+                    className="w-full px-4 py-2.5 border-2 border-slate-200 focus:border-indigo-400 rounded-xl outline-hidden text-slate-700 font-sans"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Duration (Minutes)</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="number"
+                      min={1}
+                      max={480}
+                      value={tvForm.durationMinutes}
+                      onChange={(e) => setTvForm(prev => ({ ...prev, durationMinutes: Math.max(1, parseInt(e.target.value) || 0) }))}
+                      className="w-24 px-4 py-2.5 border-2 border-slate-200 focus:border-indigo-400 rounded-xl outline-hidden text-slate-700 font-sans font-mono text-center"
+                    />
+                    {/* Presets */}
+                    <div className="flex-1 grid grid-cols-4 gap-1.5">
+                      {[15, 30, 45, 60].map(mins => (
+                        <button
+                          key={mins}
+                          type="button"
+                          onClick={() => setTvForm(prev => ({ ...prev, durationMinutes: mins }))}
+                          className={`py-2 text-xs font-bold rounded-lg border transition ${tvForm.durationMinutes === mins ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-slate-50 border-slate-200 hover:bg-slate-100 text-slate-600'} cursor-pointer`}
+                        >
+                          +{mins}m
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">What did they watch? (Optional)</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Cartoon movie, gaming session, YouTube"
+                    value={tvForm.notes}
+                    onChange={(e) => setTvForm(prev => ({ ...prev, notes: e.target.value }))}
+                    className="w-full px-4 py-2.5 border-2 border-slate-200 focus:border-indigo-400 rounded-xl outline-hidden text-slate-700 font-sans"
+                  />
+                </div>
+
+                {tvError && <p className="text-rose-500 text-xs font-bold bg-rose-50 p-2 rounded-lg border border-rose-100">{tvError}</p>}
+                {tvSuccess && <p className="text-emerald-500 text-xs font-bold bg-emerald-50 p-2 rounded-lg border border-emerald-100">{tvSuccess}</p>}
+
+                <button
+                  type="submit"
+                  className="w-full py-3 bg-rose-500 hover:bg-rose-600 text-white font-display font-extrabold rounded-xl transition shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Plus size={18} />
+                  Record Interval
+                </button>
+              </form>
+            </div>
+
+            {/* Daily Consolidation Column */}
+            <div className="lg:col-span-2 space-y-6 text-left">
+              {/* Daily view picker */}
+              <div className="bg-white p-6 rounded-3xl border-4 border-slate-100 shadow-xs">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-100 pb-4 mb-4 gap-3">
+                  <div>
+                    <h3 className="font-display font-black text-xl text-slate-800 flex items-center gap-2">
+                      📊 Consolidated Daily Report
+                    </h3>
+                    <p className="text-xs text-slate-400 font-semibold mt-0.5">
+                      View and manage total screen time logged by day.
+                    </p>
+                  </div>
+                  <input
+                    type="date"
+                    value={tvForm.date}
+                    onChange={(e) => setTvForm(prev => ({ ...prev, date: e.target.value }))}
+                    className="px-3 py-1.5 border-2 border-slate-200 focus:border-indigo-400 rounded-xl text-sm font-sans outline-hidden bg-slate-50 text-slate-700"
+                  />
+                </div>
+
+                {/* Consolidated List per Kid */}
+                {kids.length === 0 ? (
+                  <div className="text-center py-6 text-slate-400 font-medium">
+                    Please create a family profile first!
+                  </div>
+                ) : (
+                  <div className="space-y-6">
+                    {kids.map(kid => {
+                      // Get all sessions for this kid on this date
+                      const sessions = tvSessions.filter(s => s.kidId === kid.id && s.date === tvForm.date);
+                      const totalMinutes = sessions.reduce((sum, s) => sum + s.durationMinutes, 0);
+                      const limitMinutes = kid.screenTimeLimitMinutes ?? 60; // default screen time guideline
+                      const percent = Math.min(100, (totalMinutes / limitMinutes) * 100);
+
+                      let barColor = "bg-emerald-500";
+                      let textColor = "text-emerald-700";
+                      let bgFill = "bg-emerald-50";
+                      let borderStyle = "border-emerald-100";
+                      if (totalMinutes > limitMinutes + 30) {
+                        barColor = "bg-rose-500";
+                        textColor = "text-rose-700";
+                        bgFill = "bg-rose-50";
+                        borderStyle = "border-rose-100";
+                      } else if (totalMinutes > limitMinutes) {
+                        barColor = "bg-amber-500";
+                        textColor = "text-amber-700";
+                        bgFill = "bg-amber-50";
+                        borderStyle = "border-amber-100";
+                      }
+
+                      return (
+                        <div key={kid.id} className={`p-4 rounded-2xl border-2 ${bgFill} ${borderStyle} transition-all`}>
+                          <div className="flex justify-between items-center mb-2">
+                            <div>
+                              <span className="font-display font-extrabold text-lg text-slate-800">{kid.name}</span>
+                              <span className="text-3xs tracking-widest uppercase font-sans font-black bg-white px-2 py-0.5 rounded-full border border-slate-200 text-slate-500 ml-2">
+                                Guideline: {limitMinutes}m
+                              </span>
+                            </div>
+                            <div className="text-right">
+                              <span className={`text-xl font-mono font-black ${textColor}`}>{totalMinutes}</span>
+                              <span className="text-xs text-slate-400 uppercase font-sans font-bold ml-1">mins</span>
+                            </div>
+                          </div>
+
+                          {/* Progress bar */}
+                          <div className="w-full bg-white rounded-full h-3.5 overflow-hidden border border-slate-200">
+                            <div className={`h-full ${barColor} rounded-full transition-all duration-500`} style={{ width: `${percent}%` }} />
+                          </div>
+
+                          {totalMinutes > limitMinutes && (() => {
+                            const excessMinutes = totalMinutes - limitMinutes;
+                            const penaltyPoints = Math.floor(excessMinutes / 30) * 5;
+                            return (
+                              <div className="mt-1.5 space-y-1">
+                                <p className={`text-3xs font-extrabold uppercase tracking-wider ${textColor} flex items-center gap-1`}>
+                                  ⚠️ Guideline limit exceeded ({excessMinutes}m over target)
+                                </p>
+                                {penaltyPoints > 0 ? (
+                                  <p className="text-3xs font-black uppercase tracking-wider text-rose-600 bg-rose-100/50 px-2 py-0.5 rounded-md w-fit border border-rose-200">
+                                    🚨 Point Deduction: -{penaltyPoints} points (-5 points for every 30m exceeded)
+                                  </p>
+                                ) : (
+                                  <p className="text-3xs font-bold uppercase tracking-wider text-slate-500">
+                                    ℹ️ Next 30m over will trigger a -5 points deduction
+                                  </p>
+                                )}
+                              </div>
+                            );
+                          })()}
+
+                          {/* Individual Interval Logs list */}
+                          <div className="mt-4 pt-3 border-t border-slate-200/60 space-y-2">
+                            <div className="flex items-center justify-between">
+                              <h5 className="text-3xs font-black uppercase tracking-wider text-slate-400">Watch Interval History ({sessions.length})</h5>
+                              {sessions.length > 0 && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (confirm(`Are you sure you want to clear all ${sessions.length} recorded TV logs for ${kid.name} on this date?`)) {
+                                      sessions.forEach(s => onDeleteTvSession(s.id));
+                                    }
+                                  }}
+                                  className="text-xxs font-sans font-bold text-rose-500 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 px-2 py-0.5 rounded-md border border-rose-100 transition cursor-pointer"
+                                >
+                                  Clear All Logs
+                                </button>
+                              )}
+                            </div>
+                            {sessions.length === 0 ? (
+                              <p className="text-xs text-slate-400 italic">No watch sessions recorded for this day.</p>
+                            ) : (
+                              <div className="space-y-1.5 max-h-[150px] overflow-y-auto pr-1">
+                                {sessions.map(s => (
+                                  <div key={s.id} className="bg-white/80 px-3 py-1.5 rounded-xl border border-slate-100 flex items-center justify-between gap-2 text-xs">
+                                    <div className="flex-1 flex flex-wrap items-center gap-x-2">
+                                      <span className="font-mono font-bold text-indigo-700 bg-indigo-50 border border-indigo-100 px-1.5 py-0.5 rounded-md text-xxs">
+                                        {s.durationMinutes}m
+                                      </span>
+                                      {s.notes && <span className="text-slate-600 font-sans font-medium">"{s.notes}"</span>}
+                                      <span className="text-3xs text-slate-400 font-semibold font-sans">
+                                        (Logged: {new Date(s.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})
+                                      </span>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => onDeleteTvSession(s.id)}
+                                      className="text-slate-400 hover:text-rose-600 hover:bg-rose-50 p-1 rounded-md transition cursor-pointer"
+                                      title="Delete Session Entry"
+                                    >
+                                      <Trash2 size={13} />
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Screen guidelines informational box */}
+              <div className="bg-slate-900 text-slate-100 p-6 rounded-3xl border-4 border-slate-800 shadow-md">
+                <h4 className="font-display font-extrabold text-lg text-amber-400 flex items-center gap-2 mb-2">
+                  💡 Screen Time Recommendations
+                </h4>
+                <p className="text-xs text-slate-300 leading-relaxed font-sans font-medium">
+                  According to pediatric guidelines, <strong>60 minutes of high-quality screen media</strong> is a healthy daily limit for kids ages 5–12. Setting custom time-slots can encourage balance, visual rest, and make screen time a fun reward for completed tasks!
+                </p>
+              </div>
             </div>
           </div>
         )}

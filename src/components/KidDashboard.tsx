@@ -1,7 +1,7 @@
 import React, { useState } from "react";
-import { Kid, Chore, Reward, PendingChore, Redemption } from "../types";
+import { Kid, Chore, Reward, PendingChore, Redemption, TvSession } from "../types";
 import { motion, AnimatePresence } from "motion/react";
-import { Star, Shield, Gift, Trophy, ArrowLeft, Hourglass, CheckCircle, Award, Sparkles, Loader2 } from "lucide-react";
+import { Star, Shield, Gift, Trophy, ArrowLeft, Hourglass, CheckCircle, Award, Sparkles, Loader2, Tv } from "lucide-react";
 
 interface KidDashboardProps {
   kid: Kid;
@@ -9,6 +9,7 @@ interface KidDashboardProps {
   rewards: Reward[];
   pending: PendingChore[];
   redemptions: Redemption[];
+  tvSessions: TvSession[];
   onCompleteChore: (choreId: string) => void;
   onRedeemReward: (reward: Reward) => Promise<void>;
   onLogout: () => void;
@@ -30,6 +31,7 @@ export default function KidDashboard({
   rewards,
   pending,
   redemptions,
+  tvSessions = [],
   onCompleteChore,
   onRedeemReward,
   onLogout
@@ -199,6 +201,72 @@ export default function KidDashboard({
           </div>
         </div>
       </div>
+
+      {/* TV Screen Time Banner (Only for kids) */}
+      {kid.role !== "spouse" && (() => {
+        const todayStr = new Date().toISOString().split("T")[0];
+        const todaySessions = tvSessions.filter(s => s.kidId === kid.id && s.date === todayStr);
+        const totalMinutes = todaySessions.reduce((sum, s) => sum + s.durationMinutes, 0);
+        if (totalMinutes === 0) return null;
+
+        const limitMinutes = kid.screenTimeLimitMinutes ?? 60;
+        const percent = Math.min(100, (totalMinutes / limitMinutes) * 100);
+
+        let barColor = "bg-emerald-500";
+        let textColor = "text-emerald-700";
+        let bgFill = "bg-emerald-50";
+        let borderStyle = "border-emerald-100";
+        if (totalMinutes > limitMinutes + 30) {
+          barColor = "bg-rose-500";
+          textColor = "text-rose-700";
+          bgFill = "bg-rose-50";
+          borderStyle = "border-rose-100";
+        } else if (totalMinutes > limitMinutes) {
+          barColor = "bg-amber-500";
+          textColor = "text-amber-700";
+          bgFill = "bg-amber-50";
+          borderStyle = "border-amber-100";
+        }
+
+        const excessMinutes = totalMinutes - limitMinutes;
+        const penaltyPoints = excessMinutes > 0 ? Math.floor(excessMinutes / 30) * 5 : 0;
+
+        return (
+          <div className={`p-4 rounded-3xl border-3 ${bgFill} ${borderStyle} text-left mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-3xs`}>
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 bg-rose-500 text-white rounded-xl">
+                <Tv size={20} />
+              </div>
+              <div>
+                <h4 className="font-display font-bold text-slate-800 text-sm md:text-base">Your Daily Screen Time</h4>
+                <p className="text-xs text-slate-400 font-sans font-medium">
+                  {penaltyPoints > 0 ? (
+                    <span className="text-rose-600 font-bold">⚠️ Penalty Applied: -{penaltyPoints} points</span>
+                  ) : (
+                    "Logged today by parents in intervals."
+                  )}
+                </p>
+              </div>
+            </div>
+            
+            <div className="flex-1 max-w-md">
+              <div className="flex justify-between items-center text-xs mb-1 font-semibold text-slate-500">
+                <span>Usage: {totalMinutes}m / {limitMinutes}m</span>
+                {totalMinutes > limitMinutes ? (
+                  <span className={`${textColor} font-bold`}>
+                    {penaltyPoints > 0 ? `-${penaltyPoints} pts penalty` : "Over target limit!"}
+                  </span>
+                ) : (
+                  <span>Great job pacing!</span>
+                )}
+              </div>
+              <div className="w-full bg-slate-200 rounded-full h-2.5 overflow-hidden border border-slate-300">
+                <div className={`h-full ${barColor} rounded-full transition-all duration-500`} style={{ width: `${percent}%` }} />
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Navigation tabs with role-specific theme */}
       <div className="grid grid-cols-3 bg-slate-100 p-2 rounded-2xl mb-8 font-display font-black text-sm md:text-base border-2 border-slate-200">

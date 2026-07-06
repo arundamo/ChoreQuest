@@ -5,6 +5,7 @@ export interface Kid {
   points: number;
   totalEarned: number;
   role?: 'kid' | 'spouse';
+  screenTimeLimitMinutes?: number;
 }
 
 export interface Chore {
@@ -44,6 +45,16 @@ export interface Redemption {
   pointsCost: number;
   redeemedAt: string;
   status: 'pending' | 'approved';
+}
+
+export interface TvSession {
+  id: string;
+  kidId: string;
+  kidName: string;
+  date: string; // YYYY-MM-DD
+  durationMinutes: number;
+  notes?: string;
+  createdAt: string;
 }
 
 // AI suggestions responses
