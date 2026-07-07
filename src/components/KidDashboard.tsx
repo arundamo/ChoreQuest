@@ -52,15 +52,40 @@ export default function KidDashboard({
     return c.assignedTo === kid.id || c.assignedTo === "all";
   });
 
+  // Helper to convert ISO string to local YYYY-MM-DD date string
+  const getLocalDateString = (isoString?: string) => {
+    const d = isoString ? new Date(isoString) : new Date();
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  };
+
   // Check if a chore was completed by this kid today (or simply has a pending / approved item in list)
   const getChoreStatus = (choreId: string) => {
+    const targetChore = chores.find(c => c.id === choreId);
+    const todayStr = getLocalDateString();
+
     // Find if there is a pending chore
-    const match = pending.find(p => p.choreId === choreId && p.kidId === kid.id && p.status === "pending");
+    const match = pending.find(p => {
+      if (p.choreId !== choreId || p.kidId !== kid.id) return false;
+      if (targetChore?.frequency === "daily") {
+        const completedDate = getLocalDateString(p.completedAt);
+        return completedDate === todayStr && p.status === "pending";
+      }
+      return p.status === "pending";
+    });
     if (match) return "pending";
 
-    const approvedMatch = pending.find(p => p.choreId === choreId && p.kidId === kid.id && p.status === "approved");
+    const approvedMatch = pending.find(p => {
+      if (p.choreId !== choreId || p.kidId !== kid.id) return false;
+      if (targetChore?.frequency === "daily") {
+        const completedDate = getLocalDateString(p.completedAt);
+        return completedDate === todayStr && p.status === "approved";
+      }
+      return p.status === "approved";
+    });
     if (approvedMatch) {
-      // In a real app we'd reset daily/weekly, let's say if completed recently within last few hours it is "approved" (done)
       return "approved";
     }
     return "available";
